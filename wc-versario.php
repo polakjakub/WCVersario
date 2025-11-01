@@ -16,7 +16,8 @@ if ( ! class_exists( 'WCVersario_Plugin' ) ) {
 
         public function __construct() {
             add_action( 'admin_enqueue_scripts', array( $this, 'enqueue_admin_assets' ) );
-            add_action( 'woocommerce_product_options_general_product_data', array( $this, 'render_trigger_button' ), 100 );
+            add_filter( 'woocommerce_product_data_tabs', array( $this, 'add_product_data_tab' ), 100 );
+            add_action( 'woocommerce_product_data_panels', array( $this, 'render_product_data_panel' ) );
             add_action( 'woocommerce_product_data_panels', array( $this, 'render_modal_container' ) );
             add_action( 'wp_ajax_wcversario_get_product_data', array( $this, 'ajax_get_product_data' ) );
             add_action( 'wp_ajax_wcversario_save_variations', array( $this, 'ajax_save_variations' ) );
@@ -80,18 +81,35 @@ if ( ! class_exists( 'WCVersario_Plugin' ) ) {
         }
 
         /**
-         * Render trigger button in product data panel.
+         * Register custom product data tab.
+         *
+         * @param array $tabs Existing product data tabs.
+         * @return array
          */
-        public function render_trigger_button() {
+        public function add_product_data_tab( $tabs ) {
+            $tabs['wcversario'] = array(
+                'label'    => __( 'Varianty tabulkou', 'wcversario' ),
+                'target'   => 'wcversario_options_panel',
+                'class'    => array( 'show_if_variable' ),
+                'priority' => 1000,
+            );
+
+            return $tabs;
+        }
+
+        /**
+         * Render trigger button within a WooCommerce options panel.
+         */
+        public function render_product_data_panel() {
             global $post;
 
-            if ( empty( $post ) ) {
-                return;
-            }
+            $product_id = ! empty( $post ) ? $post->ID : 0;
 
-            echo '<div class="options_group wcversario-options">';
-            echo '<button type="button" class="button button-secondary wcversario-open" data-product-id="' . esc_attr( $post->ID ) . '">' . esc_html__( 'Nastavit tabulkou', 'wcversario' ) . '</button>';
-            echo '<span class="wcversario-helper">' . esc_html__( 'Dostupné pouze pro produkty s variantami.', 'wcversario' ) . '</span>';
+            echo '<div id="wcversario_options_panel" class="panel woocommerce_options_panel hidden wcversario-options-panel">';
+            echo '  <div class="options_group wcversario-options">';
+            echo '      <button type="button" class="button button-secondary wcversario-open" data-product-id="' . esc_attr( $product_id ) . '">' . esc_html__( 'Nastavit tabulkou', 'wcversario' ) . '</button>';
+            echo '      <span class="wcversario-helper">' . esc_html__( 'Dostupné pouze pro produkty s variantami.', 'wcversario' ) . '</span>';
+            echo '  </div>';
             echo '</div>';
         }
 
