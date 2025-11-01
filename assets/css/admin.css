@@ -6,7 +6,7 @@
     font-family: inherit;
 }
 
-.wcversario-modal.is-open {
+#wcversario-modal.is-open {
     display: block;
 }
 

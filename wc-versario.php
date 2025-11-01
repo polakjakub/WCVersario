@@ -16,7 +16,7 @@ if ( ! class_exists( 'WCVersario_Plugin' ) ) {
 
         public function __construct() {
             add_action( 'admin_enqueue_scripts', array( $this, 'enqueue_admin_assets' ) );
-            add_action( 'woocommerce_product_options_general_product_data', array( $this, 'render_trigger_button' ) );
+            add_action( 'woocommerce_product_options_general_product_data', array( $this, 'render_trigger_button' ), 100 );
             add_action( 'woocommerce_product_data_panels', array( $this, 'render_modal_container' ) );
             add_action( 'wp_ajax_wcversario_get_product_data', array( $this, 'ajax_get_product_data' ) );
             add_action( 'wp_ajax_wcversario_save_variations', array( $this, 'ajax_save_variations' ) );
@@ -56,7 +56,7 @@ if ( ! class_exists( 'WCVersario_Plugin' ) ) {
                 array(
                     'nonce'      => wp_create_nonce( 'wcversario_admin' ),
                     'i18n'       => array(
-                        'modalTitle'        => __( 'Hromadné nastavení variant', 'wcversario' ),
+                        'modalTitle'        => __( 'Varianty tabulkou', 'wcversario' ),
                         'firstAttribute'    => __( 'První vlastnost', 'wcversario' ),
                         'secondAttribute'   => __( 'Druhá vlastnost', 'wcversario' ),
                         'selectPlaceholder' => __( 'Vyberte…', 'wcversario' ),
@@ -99,7 +99,7 @@ if ( ! class_exists( 'WCVersario_Plugin' ) ) {
          * Render modal container markup.
          */
         public function render_modal_container() {
-            echo '<div id="wcversario-modal" class="wcversario-modal" style="display:none" aria-hidden="true">';
+            echo '<div id="wcversario-modal" class="wcversario-modal" aria-hidden="true">';
             echo '  <div class="wcversario-modal__backdrop"></div>';
             echo '  <div class="wcversario-modal__dialog" role="dialog" aria-modal="true">';
             echo '      <div class="wcversario-modal__header">';
