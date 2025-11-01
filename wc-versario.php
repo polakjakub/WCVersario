@@ -107,8 +107,10 @@ if ( ! class_exists( 'WCVersario_Plugin' ) ) {
 
             echo '<div id="wcversario_options_panel" class="panel woocommerce_options_panel hidden wcversario-options-panel">';
             echo '  <div class="options_group wcversario-options">';
-            echo '      <button type="button" class="button button-secondary wcversario-open" data-product-id="' . esc_attr( $product_id ) . '">' . esc_html__( 'Nastavit tabulkou', 'wcversario' ) . '</button>';
-            echo '      <span class="wcversario-helper">' . esc_html__( 'Dostupné pouze pro produkty s variantami.', 'wcversario' ) . '</span>';
+            echo '      <p class="form-field">';
+            echo '          <button type="button" class="button button-secondary wcversario-open" data-product-id="' . esc_attr( $product_id ) . '">' . esc_html__( 'Nastavit tabulkou', 'wcversario' ) . '</button>';
+            echo '      </p>';
+            echo '      <p class="wcversario-helper">' . esc_html__( 'Dostupné pouze pro produkty s variantami.', 'wcversario' ) . '</p>';
             echo '  </div>';
             echo '</div>';
         }
