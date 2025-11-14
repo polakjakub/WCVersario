@@ -119,6 +119,54 @@
     background: #f7f7f7;
 }
 
+.wcvariantario-orders__table-wrapper {
+    overflow-x: auto;
+    margin-bottom: 12px;
+}
+
+.wcvariantario-orders-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.wcvariantario-orders-table th,
+.wcvariantario-orders-table td {
+    border: 1px solid #dcdcde;
+    padding: 8px 10px;
+    text-align: left;
+    vertical-align: top;
+}
+
+.wcvariantario-orders-table th {
+    background: #f7f7f7;
+    white-space: nowrap;
+}
+
+.wcvariantario-orders__row.is-overlap {
+    background-color: #fff3f3;
+}
+
+.wcvariantario-orders__row.is-overlap td:last-child {
+    font-weight: 600;
+    color: #b32d2e;
+}
+
+.wcvariantario-orders-table a {
+    color: #2271b1;
+    text-decoration: none;
+}
+
+.wcvariantario-orders-table a:hover,
+.wcvariantario-orders-table a:focus {
+    text-decoration: underline;
+}
+
+.wcvariantario-orders__note {
+    margin: 8px 0 0;
+    color: #50575e;
+    font-size: 13px;
+}
+
 .wcvariantario-changes {
     border-top: 1px solid #e0e0e0;
     padding-top: 16px;
@@ -157,6 +205,10 @@
 
 .wcvariantario-options .wcvariantario-open {
     margin: 4px 0;
+}
+
+.wcvariantario-options .wcvariantario-open-orders {
+    margin-left: 8px;
 }
 
 .wcvariantario-options .wcvariantario-helper {
