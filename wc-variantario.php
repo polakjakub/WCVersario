@@ -21,6 +21,7 @@ if ( ! class_exists( 'WCVariantario_Plugin' ) ) {
             add_action( 'woocommerce_product_data_panels', array( $this, 'render_modal_container' ) );
             add_action( 'wp_ajax_wcvariantario_get_product_data', array( $this, 'ajax_get_product_data' ) );
             add_action( 'wp_ajax_wcvariantario_save_variations', array( $this, 'ajax_save_variations' ) );
+            add_action( 'wp_ajax_wcvariantario_get_product_orders', array( $this, 'ajax_get_product_orders' ) );
         }
 
         /**
@@ -74,6 +75,17 @@ if ( ! class_exists( 'WCVariantario_Plugin' ) ) {
                         'loading'           => __( 'Načítám…', 'wcvariantario' ),
                         'error'             => __( 'Nastala chyba. Zkuste to prosím znovu.', 'wcvariantario' ),
                         'invalidSelection'  => __( 'Vyberte prosím možnosti pro obě vlastnosti.', 'wcvariantario' ),
+                        'ordersTitle'       => __( 'Prodáno – přehled variant', 'wcvariantario' ),
+                        'ordersEmpty'       => __( 'Pro tento produkt zatím neexistují žádné objednávky.', 'wcvariantario' ),
+                        'ordersHeaderOrder' => __( 'Objednávka', 'wcvariantario' ),
+                        'ordersHeaderDate'  => __( 'Datum', 'wcvariantario' ),
+                        'ordersHeaderCustomer' => __( 'Zákazník', 'wcvariantario' ),
+                        'ordersHeaderQuantity' => __( 'Množství', 'wcvariantario' ),
+                        'ordersHeaderStatus' => __( 'Stav', 'wcvariantario' ),
+                        'ordersHeaderOverlap' => __( 'Kolize', 'wcvariantario' ),
+                        'ordersOverlapYes'  => __( 'Kolize', 'wcvariantario' ),
+                        'ordersOverlapNo'   => __( 'Bez kolize', 'wcvariantario' ),
+                        'ordersHint'        => __( 'Řádky se shodnými variantami jsou seřazené za sebou. Zvýrazněné řádky označují kolize dle kombinace variant.', 'wcvariantario' ),
                     ),
                     'ajaxUrl'    => admin_url( 'admin-ajax.php' ),
                 )
@@ -109,6 +121,7 @@ if ( ! class_exists( 'WCVariantario_Plugin' ) ) {
             echo '  <div class="options_group wcvariantario-options">';
             echo '      <p class="form-field">';
             echo '          <button type="button" class="button button-secondary wcvariantario-open" data-product-id="' . esc_attr( $product_id ) . '">' . esc_html__( 'Nastavit tabulkou', 'wcvariantario' ) . '</button>';
+            echo '          <button type="button" class="button button-secondary wcvariantario-open-orders" data-product-id="' . esc_attr( $product_id ) . '">' . esc_html__( 'Přehled objednávek', 'wcvariantario' ) . '</button>';
             echo '      </p>';
             echo '      <p class="wcvariantario-helper">' . esc_html__( 'Dostupné pouze pro produkty s variantami.', 'wcvariantario' ) . '</p>';
             echo '  </div>';
@@ -149,39 +162,8 @@ if ( ! class_exists( 'WCVariantario_Plugin' ) ) {
                 wp_send_json_error( array( 'message' => __( 'Produkt není typu s variantami.', 'wcvariantario' ) ) );
             }
 
-            $attributes = array();
-            foreach ( $product->get_attributes() as $attribute ) {
-                if ( ! $attribute->get_variation() ) {
-                    continue;
-                }
-
-                $terms = array();
-                if ( $attribute->is_taxonomy() ) {
-                    $attribute_terms = $attribute->get_terms();
-                    if ( ! empty( $attribute_terms ) ) {
-                        foreach ( $attribute_terms as $term ) {
-                            $terms[] = array(
-                                'slug' => $term->slug,
-                                'name' => $term->name,
-                            );
-                        }
-                    }
-                } else {
-                    foreach ( $attribute->get_options() as $option ) {
-                        $terms[] = array(
-                            'slug' => sanitize_title( $option ),
-                            'name' => $option,
-                        );
-                    }
-                }
-
-                $attributes[] = array(
-                    'name'         => $attribute->get_name(),
-                    'label'        => wc_attribute_label( $attribute->get_name() ),
-                    'terms'        => $terms,
-                    'is_taxonomy'  => $attribute->is_taxonomy(),
-                );
-            }
+            $attribute_data = $this->collect_variation_attributes( $product );
+            $attributes     = $attribute_data['attributes'];
 
             if ( empty( $attributes ) ) {
                 wp_send_json_error( array( 'message' => __( 'Produkt nemá atributy použité pro varianty.', 'wcvariantario' ) ) );
@@ -211,6 +193,178 @@ if ( ! class_exists( 'WCVariantario_Plugin' ) ) {
                 array(
                     'attributes' => $attributes,
                     'variations' => $variations,
+                )
+            );
+        }
+
+        /**
+         * Handle AJAX request for product order overview.
+         */
+        public function ajax_get_product_orders() {
+            check_ajax_referer( 'wcvariantario_admin', 'nonce' );
+
+            $product_id = isset( $_POST['product_id'] ) ? absint( $_POST['product_id'] ) : 0;
+
+            if ( ! $product_id ) {
+                wp_send_json_error( array( 'message' => __( 'Neplatné ID produktu.', 'wcvariantario' ) ) );
+            }
+
+            $product = wc_get_product( $product_id );
+
+            if ( ! $product || 'variable' !== $product->get_type() ) {
+                wp_send_json_error( array( 'message' => __( 'Produkt není typu s variantami.', 'wcvariantario' ) ) );
+            }
+
+            $attribute_data   = $this->collect_variation_attributes( $product );
+            $attributes       = $attribute_data['attributes'];
+            $attribute_terms  = $attribute_data['terms'];
+            $attribute_keys   = array_map(
+                static function( $attribute ) {
+                    return $attribute['name'];
+                },
+                $attributes
+            );
+
+            $orders_query = new WC_Order_Query(
+                array(
+                    'limit'      => -1,
+                    'type'       => 'shop_order',
+                    'status'     => wc_get_is_paid_statuses(),
+                    'product_id' => $product_id,
+                    'return'     => 'objects',
+                )
+            );
+
+            $orders = $orders_query->get_orders();
+
+            $items = array();
+
+            foreach ( $orders as $order ) {
+                if ( ! $order instanceof WC_Order ) {
+                    continue;
+                }
+
+                foreach ( $order->get_items( 'line_item' ) as $item ) {
+                    if ( ! $item instanceof WC_Order_Item_Product ) {
+                        continue;
+                    }
+
+                    $line_product_id = $item->get_product_id();
+                    $variation_id    = $item->get_variation_id();
+                    $parent_id       = $variation_id ? wp_get_post_parent_id( $variation_id ) : $line_product_id;
+
+                    if ( (int) $line_product_id !== $product_id && (int) $parent_id !== $product_id ) {
+                        continue;
+                    }
+
+                    $raw_attributes = $item->get_variation_attributes();
+
+                    if ( empty( $raw_attributes ) && $variation_id ) {
+                        $variation_product = wc_get_product( $variation_id );
+                        if ( $variation_product instanceof WC_Product_Variation ) {
+                            $raw_attributes = $variation_product->get_attributes();
+                        }
+                    }
+
+                    $attributes_for_item = array();
+
+                    foreach ( $raw_attributes as $attr_key => $attr_value ) {
+                        $clean_key = str_replace( 'attribute_', '', $attr_key );
+
+                        if ( ! in_array( $clean_key, $attribute_keys, true ) ) {
+                            continue;
+                        }
+
+                        $value_slug = is_array( $attr_value ) ? '' : (string) $attr_value;
+                        $terms      = isset( $attribute_terms[ $clean_key ] ) ? $attribute_terms[ $clean_key ] : array();
+                        $value_name = isset( $terms[ $value_slug ] ) ? $terms[ $value_slug ] : $value_slug;
+
+                        $attributes_for_item[ $clean_key ] = array(
+                            'slug' => $value_slug,
+                            'name' => $value_name,
+                        );
+                    }
+
+                    $order_date = $order->get_date_created();
+                    $timestamp  = $order_date ? (int) $order_date->getTimestamp() : 0;
+                    $date_label = $order_date ? wc_format_datetime( $order_date, wc_date_format() . ' ' . wc_time_format() ) : '';
+
+                    $customer_name = trim( wp_strip_all_tags( $order->get_formatted_billing_full_name() ) );
+                    if ( '' === $customer_name ) {
+                        $customer_name = wp_strip_all_tags( $order->get_billing_email() );
+                    }
+
+                    $status_key   = 'wc-' . $order->get_status();
+                    $status_label = function_exists( 'wc_get_order_status_name' ) ? wc_get_order_status_name( $status_key ) : $order->get_status();
+
+                    $items[] = array(
+                        'order_id'           => $order->get_id(),
+                        'order_number'       => $order->get_order_number(),
+                        'order_edit_url'     => esc_url_raw( get_edit_post_link( $order->get_id(), 'raw' ) ),
+                        'status'             => $order->get_status(),
+                        'status_label'       => $status_label,
+                        'date'               => $date_label,
+                        'timestamp'          => $timestamp,
+                        'customer'           => $customer_name,
+                        'quantity'           => max( 1, (int) $item->get_quantity() ),
+                        'attributes'         => $attributes_for_item,
+                    );
+                }
+            }
+
+            $combination_counts = array();
+
+            foreach ( $items as $index => $item ) {
+                $combination_key = $this->build_combination_key( $item['attributes'], $attribute_keys );
+
+                $count_key = '' === $combination_key ? '_' : $combination_key;
+
+                if ( ! isset( $combination_counts[ $count_key ] ) ) {
+                    $combination_counts[ $count_key ] = 0;
+                }
+
+                $combination_counts[ $count_key ] += $item['quantity'];
+
+                $items[ $index ]['combination_key'] = $combination_key;
+                $items[ $index ]['count_key']       = $count_key;
+            }
+
+            usort(
+                $items,
+                function( $a, $b ) use ( $attribute_keys ) {
+                    foreach ( $attribute_keys as $key ) {
+                        $value_a = isset( $a['attributes'][ $key ]['name'] ) ? $a['attributes'][ $key ]['name'] : '';
+                        $value_b = isset( $b['attributes'][ $key ]['name'] ) ? $b['attributes'][ $key ]['name'] : '';
+
+                        if ( $value_a === $value_b ) {
+                            continue;
+                        }
+
+                        return strcmp( $value_a, $value_b );
+                    }
+
+                    if ( $a['timestamp'] === $b['timestamp'] ) {
+                        return strcmp( (string) $a['order_number'], (string) $b['order_number'] );
+                    }
+
+                    return $a['timestamp'] <=> $b['timestamp'];
+                }
+            );
+
+            foreach ( $items as $index => $item ) {
+                $count_key = isset( $item['count_key'] ) ? $item['count_key'] : '_';
+                $total     = isset( $combination_counts[ $count_key ] ) ? $combination_counts[ $count_key ] : $item['quantity'];
+
+                $items[ $index ]['combination_total'] = $total;
+                $items[ $index ]['overlap']           = $total > 1;
+
+                unset( $items[ $index ]['timestamp'], $items[ $index ]['count_key'], $items[ $index ]['combination_key'] );
+            }
+
+            wp_send_json_success(
+                array(
+                    'attributes' => $attributes,
+                    'items'      => $items,
                 )
             );
         }
@@ -339,6 +493,94 @@ if ( ! class_exists( 'WCVariantario_Plugin' ) ) {
             $variation->save();
 
             return $variation_id;
+        }
+
+        /**
+         * Collect variation attributes and their terms for a product.
+         *
+         * @param WC_Product_Variable $product Product instance.
+         *
+         * @return array{
+         *     attributes: array<int, array<string, mixed>>,
+         *     terms: array<string, array<string, string>>
+         * }
+         */
+        protected function collect_variation_attributes( $product ) {
+            $attributes    = array();
+            $terms_mapping = array();
+
+            foreach ( $product->get_attributes() as $attribute ) {
+                if ( ! $attribute->get_variation() ) {
+                    continue;
+                }
+
+                $terms = array();
+
+                if ( $attribute->is_taxonomy() ) {
+                    $attribute_terms = $attribute->get_terms();
+                    if ( ! empty( $attribute_terms ) ) {
+                        foreach ( $attribute_terms as $term ) {
+                            $terms[] = array(
+                                'slug' => $term->slug,
+                                'name' => $term->name,
+                            );
+                        }
+                    }
+                } else {
+                    foreach ( $attribute->get_options() as $option ) {
+                        $terms[] = array(
+                            'slug' => sanitize_title( $option ),
+                            'name' => $option,
+                        );
+                    }
+                }
+
+                $attribute_name                = $attribute->get_name();
+                $attributes[]                  = array(
+                    'name'        => $attribute_name,
+                    'label'       => wc_attribute_label( $attribute_name ),
+                    'terms'       => $terms,
+                    'is_taxonomy' => $attribute->is_taxonomy(),
+                );
+                $terms_mapping[ $attribute_name ] = array();
+
+                foreach ( $terms as $term ) {
+                    $terms_mapping[ $attribute_name ][ $term['slug'] ] = $term['name'];
+                }
+            }
+
+            return array(
+                'attributes' => $attributes,
+                'terms'      => $terms_mapping,
+            );
+        }
+
+        /**
+         * Build a normalized combination key for variation attributes.
+         *
+         * @param array $attributes     Attributes data for the line item.
+         * @param array $attribute_keys Expected attribute keys order.
+         *
+         * @return string
+         */
+        protected function build_combination_key( $attributes, $attribute_keys ) {
+            if ( empty( $attribute_keys ) ) {
+                return '';
+            }
+
+            $parts = array();
+
+            foreach ( $attribute_keys as $key ) {
+                $value = '';
+
+                if ( isset( $attributes[ $key ]['slug'] ) ) {
+                    $value = (string) $attributes[ $key ]['slug'];
+                }
+
+                $parts[] = $key . ':' . $value;
+            }
+
+            return implode( '|', $parts );
         }
     }
 }

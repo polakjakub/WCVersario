@@ -9,8 +9,10 @@
 
     const state = {
         productId: null,
+        view: 'matrix',
         attributes: [],
         variations: [],
+        orders: [],
         selectedFirst: null,
         selectedSecond: null,
         selectedFirstTerms: [],
@@ -27,11 +29,13 @@
 
     const i18n = config.i18n || {};
 
-    function openModal(productId) {
+    function openModal(productId, view = 'matrix') {
         state.productId = productId;
+        state.view = view;
         state.loading = true;
         state.attributes = [];
         state.variations = [];
+        state.orders = [];
         state.selectedFirst = null;
         state.selectedSecond = null;
         state.selectedFirstTerms = [];
@@ -41,7 +45,11 @@
         const $modal = $(selectors.modal);
         $modal.addClass('is-open').attr('aria-hidden', 'false');
         renderLoading();
-        loadProductData();
+        if (state.view === 'orders') {
+            loadProductOrders();
+        } else {
+            loadProductData();
+        }
     }
 
     function closeModal() {
@@ -51,7 +59,8 @@
     }
 
     function renderLoading() {
-        $(selectors.title).text(i18n.modalTitle || '');
+        const title = state.view === 'orders' ? i18n.ordersTitle : i18n.modalTitle;
+        $(selectors.title).text(title || '');
         $(selectors.content).html('<div class="wcvariantario-loading">' + (i18n.loading || 'Loading…') + '</div>');
     }
 
@@ -80,12 +89,46 @@
             });
     }
 
+    function loadProductOrders() {
+        $.post(
+            config.ajaxUrl,
+            {
+                action: 'wcvariantario_get_product_orders',
+                nonce: config.nonce,
+                product_id: state.productId,
+            }
+        )
+            .done((response) => {
+                if (!response || !response.success || !response.data) {
+                    renderError(response && response.data ? response.data.message : null);
+                    return;
+                }
+
+                state.attributes = response.data.attributes || [];
+                state.orders = response.data.items || [];
+                state.loading = false;
+                renderModalContent();
+            })
+            .fail(() => {
+                renderError();
+            });
+    }
+
     function renderError(message) {
         const errorText = message || i18n.error || 'Došlo k chybě.';
         $(selectors.content).html('<div class="wcvariantario-loading wcvariantario-error">' + errorText + '</div>');
     }
 
     function renderModalContent() {
+        if (state.view === 'orders') {
+            renderOrdersModalContent();
+            return;
+        }
+
+        renderMatrixModalContent();
+    }
+
+    function renderMatrixModalContent() {
         if (!state.attributes.length) {
             renderError(i18n.noAttributes);
             return;
@@ -257,6 +300,96 @@
         container.html(heading + list);
     }
 
+    function escapeHtml(value) {
+        if (value === null || value === undefined) {
+            return '';
+        }
+
+        return String(value)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#039;');
+    }
+
+    function renderOrdersModalContent() {
+        $(selectors.title).text(i18n.ordersTitle || '');
+
+        if (!state.orders.length) {
+            $(selectors.content).html('<div class="wcvariantario-loading">' + (i18n.ordersEmpty || '') + '</div>');
+            return;
+        }
+
+        const headerCells = [
+            '<th scope="col">' + escapeHtml(i18n.ordersHeaderOrder || '') + '</th>',
+            '<th scope="col">' + escapeHtml(i18n.ordersHeaderDate || '') + '</th>',
+            '<th scope="col">' + escapeHtml(i18n.ordersHeaderCustomer || '') + '</th>',
+        ];
+
+        const attributeHeaders = state.attributes
+            .map((attribute) => '<th scope="col">' + escapeHtml(attribute.label || attribute.name || '') + '</th>');
+
+        headerCells.push(...attributeHeaders);
+        headerCells.push(
+            '<th scope="col">' + escapeHtml(i18n.ordersHeaderQuantity || '') + '</th>',
+            '<th scope="col">' + escapeHtml(i18n.ordersHeaderStatus || '') + '</th>',
+            '<th scope="col">' + escapeHtml(i18n.ordersHeaderOverlap || '') + '</th>'
+        );
+
+        const rows = state.orders
+            .map((item) => {
+                const attributeCells = state.attributes
+                    .map((attribute) => {
+                        const attributeData = item.attributes && item.attributes[attribute.name];
+                        const value = attributeData && attributeData.name ? attributeData.name : '—';
+                        return '<td>' + escapeHtml(value) + '</td>';
+                    })
+                    .join('');
+
+                const orderNumber = escapeHtml(item.order_number || '');
+                const orderLink = item.order_edit_url
+                    ? '<a href="' + escapeHtml(item.order_edit_url) + '" target="_blank" rel="noopener noreferrer">' + orderNumber + '</a>'
+                    : orderNumber;
+
+                const overlapText = item.overlap
+                    ? escapeHtml((i18n.ordersOverlapYes || 'Kolize') + ' (' + (item.combination_total || item.quantity || 0) + '×)')
+                    : escapeHtml(i18n.ordersOverlapNo || '');
+
+                const rowClasses = ['wcvariantario-orders__row'];
+                if (item.overlap) {
+                    rowClasses.push('is-overlap');
+                }
+
+                return (
+                    '<tr class="' + rowClasses.join(' ') + '">' +
+                    '<td>' + orderLink + '</td>' +
+                    '<td>' + escapeHtml(item.date || '') + '</td>' +
+                    '<td>' + escapeHtml(item.customer || '') + '</td>' +
+                    attributeCells +
+                    '<td>' + escapeHtml(item.quantity || 0) + '</td>' +
+                    '<td>' + escapeHtml(item.status_label || item.status || '') + '</td>' +
+                    '<td>' + overlapText + '</td>' +
+                    '</tr>'
+                );
+            })
+            .join('');
+
+        const table = [
+            '<div class="wcvariantario-orders">',
+            '  <div class="wcvariantario-orders__table-wrapper">',
+            '      <table class="wcvariantario-orders-table">',
+            '          <thead><tr>' + headerCells.join('') + '</tr></thead>',
+            '          <tbody>' + rows + '</tbody>',
+            '      </table>',
+            '  </div>',
+            i18n.ordersHint ? '  <p class="wcvariantario-orders__note">' + escapeHtml(i18n.ordersHint) + '</p>' : '',
+            '</div>',
+        ].join('');
+
+        $(selectors.content).html(table);
+    }
+
     function getTermBySlug(attribute, slug) {
         return (attribute.terms || []).find((term) => term.slug === slug) || { name: slug };
     }
@@ -406,7 +539,19 @@
             return;
         }
 
-        openModal($(this).data('product-id'));
+        openModal($(this).data('product-id'), 'matrix');
+    });
+
+    $(document).on('click', '.wcvariantario-open-orders', function (event) {
+        event.preventDefault();
+
+        const productType = $('#product-type').val();
+        if (productType !== 'variable') {
+            window.alert(i18n.requiresVariable || 'Tato funkce je dostupná pouze pro variabilní produkty.');
+            return;
+        }
+
+        openModal($(this).data('product-id'), 'orders');
     });
 
     $(document).on('click', '.wcvariantario-modal__close, .wcvariantario-modal__backdrop', function (event) {
